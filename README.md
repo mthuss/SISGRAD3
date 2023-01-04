@@ -1,2 +1,2 @@
 # SISGRAD3
-SISGRAD III - Third Time's the Charm
+SISGRAD III - The T[h]rees that B 
