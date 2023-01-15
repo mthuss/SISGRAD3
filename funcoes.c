@@ -236,16 +236,22 @@ void inserir(idx* item)
 
 }
 
-//void traversal(struct btreeNode *myNode) {
-//  int i;
-//  if (myNode) {
-//    for (i = 0; i < myNode->nChaves; i++) {
-//      traversal(myNode->filhos[i]);
-//      printf("%d ", myNode->itens[i + 1]);
-//    }
-//    traversal(myNode->filhos[i]);
-//  }
-//}
+int pesquisar(int RA, Pagina* no)
+{
+	int pos;
+	if(RA < no->itens[1]->RA)
+		pos = 0; //item->RA deve ser inserido na primeira posição
+	else
+	{
+
+		for(pos = no->nChaves; RA < no->itens[pos]->RA && pos > 1; pos--); //encontra a posição apropriada pro item->RA no nó
+		if(no->itens[pos]->RA == RA)
+			return 1;
+	}
+	if(no->filhos[pos])
+		return pesquisar(RA,no->filhos[pos]);
+	return 0;
+}
 
 void imprimir(Pagina* no)
 {
@@ -261,8 +267,16 @@ void imprimir(Pagina* no)
 	}
 }
 
-void imprimirArvore()
+void imprimirArvore() //wrapper pra função imprimir(raiz);
 {
 	imprimir(raiz);
 	return;
+}
+
+void pesquisarRA(int RA)
+{
+	if(pesquisar(RA,raiz))
+		printf("RA encontrado!!!\n");
+	else
+		printf("RA NÃO encontrado!!!\n");
 }
