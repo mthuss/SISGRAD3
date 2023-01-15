@@ -1,3 +1,4 @@
+#define MAX 4
 typedef struct aluno
 {
 	char* nome;
@@ -14,6 +15,7 @@ typedef struct indice
 typedef struct BTPage
 {
 	int nChaves;
-	int chaves[MAX];
-	int32_t filhos[MAX+1];
+	idx* itens[MAX+1];
+	struct BTPage* filhos[MAX+1];
+	int ehfolha;
 } Pagina;
