@@ -1,21 +1,22 @@
 #define MAX 4
+#include <stdint.h>
 typedef struct aluno
 {
 	char* nome;
 	char* curso;
-	int RA_UNESP;
+	unsigned int RA_UNESP;
 } Aluno;
 
 typedef struct indice
 {
-	int RA;
-	int32_t RRN;
+	unsigned int RA;
+	uint32_t RRN;
 } idx;
 
 typedef struct BTPage
 {
-	int nChaves;
+	unsigned int nChaves;
 	idx* itens[MAX+1];
 	struct BTPage* filhos[MAX+1];
-	int32_t RRN;
+	uint32_t RRN;
 } Pagina;

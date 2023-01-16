@@ -3,12 +3,14 @@
 #include "B-tree.h"
 #include <string.h>
 #include <limits.h>
+#include <stdint.h>
 //trocar todos os ints por unsigned ints dps
 
 #define MAX 4 //maximo de ITENS na árvore
 #define MIN 2
 #define TAMt 128 //tamanho de cada registro do arquivo de turma
 #define TAMi 52 //tamanho de cada registro do arquivo de indices (presumindo que todos os dados têm 4 bytes cada
+#define NOT_SET UINT_MAX //os dados desconhecidos vão ser salvos no arquivo como UINT_MAX
 
 Pagina* raiz = NULL;
 FILE* indices;
@@ -35,7 +37,7 @@ void abrirArquivos()
 		indices = fopen("ibtree.idx","w+");
 //		fprintf(indices,"????");
 		fseek(indices,0L,SEEK_SET);
-		printBytes(INT_MAX);
+		printBytes(NOT_SET);
 	}
 
 	if(turma == NULL)
@@ -90,7 +92,7 @@ Aluno* lerRegistro(int RRN)
 
 }
 
-int pesquisar(int RA, Pagina* no, int32_t* RRN)
+int pesquisar(int RA, Pagina* no, uint32_t* RRN)
 {
 	if(!no)
 		return 0;
@@ -129,7 +131,7 @@ int validar(char* string)
 idx* criaRegistro()
 {
 	idx* novo = malloc(sizeof(idx));
-	int32_t RRN;
+	uint32_t RRN;
 	int i,j;
 	char nome[129];
 	char curso[129];
@@ -154,7 +156,7 @@ idx* criaRegistro()
 
 	printf("RA: ");
 	scanf("%d", &a->RA_UNESP);
-	if(a->RA_UNESP == INT_MAX)
+	if(a->RA_UNESP == UINT_MAX)
 	{
 		printf("Este RA não está acima do limite!!!\nPor favor tente outro\n");
 		return NULL;
@@ -239,7 +241,7 @@ Pagina* criarPagina(idx* item, Pagina* filho)
 	return novaPagina;
 }
 
-void printPagina(Pagina* pag, int32_t RRN)
+void printPagina(Pagina* pag, uint32_t RRN)
 {
 	char string[53];
 	fseek(indices,RRN*TAMi+1,SEEK_SET);
@@ -258,7 +260,7 @@ void printPagina(Pagina* pag, int32_t RRN)
 
 
 }
-//int32_t salvarPagina(Pagina* pag, int32_t RRN)
+//uint32_t salvarPagina(Pagina* pag, uint32_t RRN)
 //{
 //	char string[53];
 //	if(RRN == -1) //pagina ainda não está salva no arquivo
@@ -282,12 +284,12 @@ void printPagina(Pagina* pag, int32_t RRN)
 //}
 
 //arquivo vai ser escrito em binário pra economizar espaço
-//INT_MAX é colocado onde não se sabe o valor
-int32_t salvarPagina(Pagina* pag, int32_t RRN)
+//UINT_MAX é colocado onde não se sabe o valor
+uint32_t salvarPagina(Pagina* pag, uint32_t RRN)
 {
 	int pos;
 	char string[53];
-	if(RRN == INT_MAX) //pagina ainda não está salva no arquivo
+	if(RRN == NOT_SET) //pagina ainda não está salva no arquivo
 		fseek(indices,0L,SEEK_END);
 	else
 		fseek(indices,RRN*TAMi+4,SEEK_SET); //o 4 aqui conta com os bytes do cabeçalho
@@ -295,7 +297,7 @@ int32_t salvarPagina(Pagina* pag, int32_t RRN)
 
 	if(pag->filhos[0])
 		printBytes((int)pag->filhos[0]);
-	else printBytes(INT_MAX);
+	else printBytes(NOT_SET);
 
 	for(int i = 1; i <= MAX; i++)
 	{
@@ -306,13 +308,13 @@ int32_t salvarPagina(Pagina* pag, int32_t RRN)
 		}
 		else
 		{
-			printBytes(INT_MAX);
-			printBytes(INT_MAX);
+			printBytes(NOT_SET);
+			printBytes(NOT_SET);
 		}
 		if(pag->filhos[i])
 			printBytes((int)pag->filhos[i]);
 		else 
-			printBytes(INT_MAX);
+			printBytes(NOT_SET);
 	}
 
 	return (pos - 4)/TAMi;
@@ -323,27 +325,46 @@ void printPaginateste()
 	printPagina(raiz,0);
 }
 
-Pagina* carregarPagina(int32_t RRN)
+void imprimir(Pagina* no)
+{
+	int i;
+	if(no)
+	{
+		for(i = 0; i < no->nChaves; i++)
+		{
+			imprimir(no->filhos[i]);
+			printf("RA: %d\nRRN: %d\n\n",no->itens[i+1]->RA,no->itens[i+1]->RRN);
+		}
+		imprimir(no->filhos[i]);
+	}
+}
+
+Pagina* carregarPagina(uint32_t RRN)
 {
 	fseek(indices,RRN*TAMi + 4,SEEK_SET);
 	Pagina* nova = malloc(sizeof(Pagina));
 	nova->filhos[0] = readBytes();
+	printf("%d",nova->filhos[0]);
 	for(int i = 1; i <= MAX; i++)
 	{
 		nova->itens[i]->RA = readBytes();
 		nova->itens[i]->RRN = readBytes();
+		printf("<%d,%d>",nova->itens[i]->RA,nova->itens[i]->RRN);
 		nova->filhos[i] = readBytes();
+		printf("%d",nova->filhos[i]);
 	}
+//	imprimir(nova);
+	return nova;
 
 }
-void imprimirPaginaArq(int32_t RRN)
+void imprimirPaginaArq(uint32_t RRN)
 {
 	unsigned int num;
 	fseek(indices,RRN*TAMi + 4,SEEK_SET);
 	Pagina* nova = malloc(sizeof(Pagina));
 	printf("\n\n");
 	num = readBytes();
-	if(num == INT_MAX)
+	if(num == NOT_SET)
 		printf("\?\?\?\?");
 	else
 		printf("%u",num);
@@ -351,17 +372,17 @@ void imprimirPaginaArq(int32_t RRN)
 	{
 
 	num = readBytes();
-	if(num == INT_MAX)
+	if(num == NOT_SET)
 		printf("<\?\?\?\?,");
 	else
 		printf("<%u,",num);
 	num = readBytes();
-	if(num == INT_MAX)
+	if(num == NOT_SET)
 		printf("\?\?\?\?>");
 	else
 		printf("%u>",num);
 	num = readBytes();
-	if(num == INT_MAX)
+	if(num == NOT_SET)
 		printf("\?\?\?\?");
 	else
 		printf("%u",num);
@@ -370,7 +391,9 @@ void imprimirPaginaArq(int32_t RRN)
 
 void imprimirPaginaArqTeste()
 {
-	imprimirPaginaArq(raiz->RRN);
+//	imprimirPaginaArq(raiz->RRN);
+//	carregarPagina(raiz->RRN);
+//	imprimir(raiz);
 }
 //inserir valor na pagina já sabia a página e a posição q será ocupada
 void inserirNaPagina(idx* item, int pos, Pagina* no, Pagina* filho)
@@ -463,6 +486,11 @@ int inserirItem(idx* item, idx** pitem, Pagina* no, Pagina** filho)
 }
 void inserir(idx* item)
 {
+	if(raiz && raiz->RRN == UINT_MAX - 1)
+	{
+		printf("A árvore está cheia!!!\nNão podem ser adicionados mais itens"); 
+		return;
+	}
 	int flag; //flag que indica ***
 	idx* i;
 	//i se refere a ***
@@ -471,7 +499,7 @@ void inserir(idx* item)
 	if(flag) //caso será criada uma nova raíz
 	{
 		raiz = criarPagina(i, filho); //i é o valor a ser inserido na raiz
-		raiz->RRN = salvarPagina(raiz,INT_MAX);
+		raiz->RRN = salvarPagina(raiz,NOT_SET);
 //		printf("RRN da raiz: %d\n",raiz->RRN);
 		fseek(indices,0L,SEEK_SET);
 		printBytes(raiz->RRN);
@@ -481,19 +509,6 @@ void inserir(idx* item)
 }
 
 
-void imprimir(Pagina* no)
-{
-	int i;
-	if(no)
-	{
-		for(i = 0; i < no->nChaves; i++)
-		{
-			imprimir(no->filhos[i]);
-			printf("RA: %d\nRRN: %d\n\n",no->itens[i+1]->RA,no->itens[i+1]->RRN);
-		}
-		imprimir(no->filhos[i]);
-	}
-}
 
 void imprimirArvore() //wrapper pra função imprimir(raiz);
 {

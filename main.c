@@ -15,6 +15,7 @@ int main()
 	//Aluno* a = pesquisarAluno(211044631);
 	//printf("Nome: %s\nCurso: %s\nRA: %d\n\n",a->nome,a->curso,a->RA_UNESP);
 	printPaginateste();
+	printf("\n\n");
 	imprimirPaginaArqTeste();
 
 	fecharArquivos();
