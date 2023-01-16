@@ -17,5 +17,5 @@ typedef struct BTPage
 	int nChaves;
 	idx* itens[MAX+1];
 	struct BTPage* filhos[MAX+1];
-	int ehfolha;
+	int32_t RRN;
 } Pagina;
