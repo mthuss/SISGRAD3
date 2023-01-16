@@ -315,7 +315,7 @@ int32_t salvarPagina(Pagina* pag, int32_t RRN)
 			printBytes(INT_MAX);
 	}
 
-	return pos;
+	return (pos - 4)/TAMi;
 }
 
 void printPaginateste()
@@ -370,8 +370,7 @@ void imprimirPaginaArq(int32_t RRN)
 
 void imprimirPaginaArqTeste()
 {
-	imprimirPaginaArq(0);
-	imprimirPaginaArq(1);
+	imprimirPaginaArq(raiz->RRN);
 }
 //inserir valor na pagina já sabia a página e a posição q será ocupada
 void inserirNaPagina(idx* item, int pos, Pagina* no, Pagina* filho)
@@ -472,7 +471,7 @@ void inserir(idx* item)
 	if(flag) //caso será criada uma nova raíz
 	{
 		raiz = criarPagina(i, filho); //i é o valor a ser inserido na raiz
-		salvarPagina(raiz,INT_MAX);
+		raiz->RRN = salvarPagina(raiz,INT_MAX);
 //		printf("RRN da raiz: %d\n",raiz->RRN);
 		fseek(indices,0L,SEEK_SET);
 		printBytes(raiz->RRN);
