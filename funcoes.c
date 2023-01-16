@@ -5,14 +5,15 @@
 
 #define MAX 4 //maximo de ITENS na árvore
 #define MIN 2
+#define TAMt 128 //tamanho de cada registro do arquivo de turma
 
 Pagina* raiz = NULL;
 
 void abrirArquivos(FILE** turma, FILE** indices)
 {
 	//note q eu não faço IDEIA de se uma declaração dessas ta 100% certa mas fico bonitinha e funciona ent vai ficar até quebrar algo
-	*turma = fopen("turma.dat","r+") ? : fopen("turma.dat","w");
-	*indices = fopen("ibtree.idx","r+") ? : fopen("ibtree.idx","w");
+	*turma = fopen("turma.dat","r+") ? : fopen("turma.dat","w+");
+	*indices = fopen("ibtree.idx","r+") ? : fopen("ibtree.idx","w+");
 
 	if(*turma == NULL)
 	{
@@ -24,6 +25,63 @@ void abrirArquivos(FILE** turma, FILE** indices)
 		printf("Erro ao abrir o arquivo de indices!!");
 		exit(1);
 	}
+}
+
+Aluno* lerRegistro(int RRN, FILE* turma)
+{
+	char string[129];
+	char* nome;
+	char* curso;
+	int RA;
+	int tamArq;
+
+	fseek(turma,0L,SEEK_END);
+	tamArq = ftell(turma);
+	rewind(turma);
+	if(RRN*TAMt >= tamArq)
+	{
+		printf("A posição requisitada não existe no arquivo de turma!!!\n");
+		return NULL;
+	}
+
+	fseek(turma,RRN*TAMt,SEEK_SET);
+	fgets(string,TAMt+1,turma);
+
+        nome = strtok(string,";");
+	curso = strtok(NULL,";");
+	RA = strtol(strtok(NULL,";"),NULL,10);
+
+	Aluno* novoAluno = malloc(sizeof(Aluno));
+	novoAluno->nome = strcpy(malloc(strlen(nome)+1),nome);
+	novoAluno->curso = strcpy(malloc(strlen(curso)+1),curso);
+	novoAluno->RA_UNESP = RA;
+
+
+	return novoAluno;
+
+}
+
+int pesquisar(int RA, Pagina* no, int32_t* RRN)
+{
+	if(!no)
+		return 0;
+	int pos;
+	if(RA < no->itens[1]->RA)
+		pos = 0; //item->RA deve ser inserido na primeira posição
+	else
+	{
+
+		for(pos = no->nChaves; RA < no->itens[pos]->RA && pos > 1; pos--); //encontra a posição apropriada pro item->RA no nó
+		if(no->itens[pos]->RA == RA)
+		{
+			if(RRN)
+				*RRN = no->itens[pos]->RRN;
+			return 1;
+		}
+	}
+	if(no->filhos[pos])
+		return pesquisar(RA,no->filhos[pos],RRN);
+	return 0;
 }
 
 //valida se a string digitada não possui nenhum caractere inválido
@@ -75,6 +133,11 @@ idx* criaRegistro(FILE* turma)
 	   garantir que não terá
 	   itens duplicados
 	   ------------------------- */
+	if(pesquisar(a->RA_UNESP,raiz,NULL))
+	{
+		printf("Esse RA já foi registrado anteriormente!!!\n");
+		return NULL;
+	}
 
 
 	//formata a string 
@@ -99,6 +162,11 @@ idx* criaRegistro(FILE* turma)
 
 idx* criaRegistroRedux(FILE* turma, char* nome, int RA,  char* curso)
 {
+	if(pesquisar(RA,raiz,NULL))
+	{
+		printf("Esse RA já foi registrado anteriormente!!!\n");
+		return NULL;
+	}
 	int RRN;
 	int j;
 	idx* novo = malloc(sizeof(idx));
@@ -236,22 +304,6 @@ void inserir(idx* item)
 
 }
 
-int pesquisar(int RA, Pagina* no)
-{
-	int pos;
-	if(RA < no->itens[1]->RA)
-		pos = 0; //item->RA deve ser inserido na primeira posição
-	else
-	{
-
-		for(pos = no->nChaves; RA < no->itens[pos]->RA && pos > 1; pos--); //encontra a posição apropriada pro item->RA no nó
-		if(no->itens[pos]->RA == RA)
-			return 1;
-	}
-	if(no->filhos[pos])
-		return pesquisar(RA,no->filhos[pos]);
-	return 0;
-}
 
 void imprimir(Pagina* no)
 {
@@ -275,8 +327,17 @@ void imprimirArvore() //wrapper pra função imprimir(raiz);
 
 void pesquisarRA(int RA)
 {
-	if(pesquisar(RA,raiz))
+	if(pesquisar(RA,raiz,NULL))
 		printf("RA encontrado!!!\n");
 	else
 		printf("RA NÃO encontrado!!!\n");
+}
+
+Aluno* pesquisarAluno(int RA, FILE* turma)
+{
+	int RRN;
+
+	pesquisar(RA,raiz,&RRN);
+	printf("RRN encontrado: %d\n",RRN);
+	return lerRegistro(RRN, turma);
 }

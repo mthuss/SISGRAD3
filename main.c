@@ -13,5 +13,9 @@ int main()
 	inserir(criaRegistroRedux(turma,"gaki",211044631,"comp"));
 	inserir(criaRegistroRedux(turma,"bruno",211044569,"comp"));
 	inserir(criaRegistroRedux(turma,"katana",211044606,"comp"));
-	imprimirArvore();
+	Aluno* a = pesquisarAluno(211044631, turma);
+	printf("Nome: %s\nCurso: %s\nRA: %d\n\n",a->nome,a->curso,a->RA_UNESP);
+
+
+//	imprimirArvore();
 }
