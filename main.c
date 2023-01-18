@@ -1,25 +1,45 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include "funcoes.c"
-#define MAX 4 //num max chaves (ou seja, num de ponteiros por pagina = 5)
-
+#include "B-Tree.h"
 
 int main()
 {
+	int RA, opt;
 	abrirArquivos();
-	inserir(criaRegistroRedux("mthus",211044067,"comp"));
-	inserir(criaRegistroRedux("lucas",211044536,"comp"));
-	inserir(criaRegistroRedux("gaki",211044631,"comp"));
-	inserir(criaRegistroRedux("bruno",211044569,"comp"));
-	inserir(criaRegistroRedux("katana",211044606,"comp"));
-	//Aluno* a = pesquisarAluno(211044631);
-	//printf("Nome: %s\nCurso: %s\nRA: %d\n\n",a->nome,a->curso,a->RA_UNESP);
-	printPaginateste();
-	printf("\n\n");
-	imprimirPaginaArqTeste();
+	printf("\t\t\nBem-vindo ao SISGRAD3.");
+	do{
+		printf("\t\nO que deseja fazer?\n1 - Gravar Aluno.\n2 - Buscar Aluno.\n3 - Ver todos os RAs\n4 - Fechar.\n\nOpção: ");
+		scanf("%d", &opt);
+
+		switch(opt){
+			case 1:
+				idx* novo = criaRegistro();
+				if(novo)
+					inserir(novo);
+				break;
+
+			case 2: 
+				printf("\nQual o numero de RA a procurar?\nRA: ");
+				scanf("%d", &RA);
+				pesquisarAluno(RA);
+				break;
+
+			case 3:
+				printf("\n\nLista RAs:\n");
+				printArvore();
+				printf("\n\n");
+				break;
+
+			case 4:
+				break;
+
+			default:
+				printf("\nNumero invalido!\n");
+				break;  
+		}
+		refreshArquivos();
+	}while(opt != 4);
 
 	fecharArquivos();
 
-
-//	imprimirArvore();
+	return 0;
 }

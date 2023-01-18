@@ -1,43 +1,42 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "B-tree.h"
+#include "B-Tree.h"
 #include <string.h>
 #include <limits.h>
 #include <stdint.h>
-//trocar todos os ints por unsigned ints dps
 
-#define MAX 4 //maximo de ITENS na árvore
-#define MIN 2
-#define TAMt 128 //tamanho de cada registro do arquivo de turma
-#define TAMi 52 //tamanho de cada registro do arquivo de indices (presumindo que todos os dados têm 4 bytes cada
-#define NOT_SET UINT_MAX //os dados desconhecidos vão ser salvos no arquivo como UINT_MAX
-
-Pagina* raiz = NULL;
+Pagina* raiz;
 FILE* indices;
 FILE* turma;
 
-void printBytes(int n)
-{
-	fprintf(indices,"%c%c%c%c", n >> 24, n >> 16, n >> 8, n);
-}
-
-unsigned int readBytes()
-{
-	return (fgetc(indices) << 24) + (fgetc(indices) << 16) + (fgetc(indices) << 8) + fgetc(indices);
-}
-
+//Funções com arquivos:
+//-------------------------------------
 void abrirArquivos()
 {
-	//note q eu não faço IDEIA de se uma declaração dessas ta 100% certa mas fico bonitinha e funciona ent vai ficar até quebrar algo
 	turma = fopen("turma.dat","r+") ? : fopen("turma.dat","w+");
-//	indices = fopen("ibtree.idx","r+") ? : fopen("ibtree.idx","w+");
+
+	//abre o arquivo com o modo certo e carrega a raiz apropriada
 	indices = fopen("ibtree.idx","r+");
 	if(!indices)
 	{
 		indices = fopen("ibtree.idx","w+");
-//		fprintf(indices,"????");
 		fseek(indices,0L,SEEK_SET);
 		printBytes(NOT_SET);
+		raiz = NULL;
+	}
+	else
+	{
+		fseek(indices,0L,SEEK_SET);
+		if(arquivoVazio(indices))
+			raiz = NULL;
+		else
+		{
+			fseek(indices,0L,SEEK_SET);
+			int RRN = readBytes();
+			raiz = carregarPagina(RRN);
+			if(raiz)
+				raiz->RRN = RRN;
+		}
 	}
 
 	if(turma == NULL)
@@ -54,45 +53,297 @@ void abrirArquivos()
 
 void fecharArquivos()
 {
-	fclose(turma);
 	fclose(indices);
+	fclose(turma);
 }
 
-Aluno* lerRegistro(int RRN)
+//para previnir perda de dados caso o programa seja interrompido bruscamente
+void refreshArquivos() 
 {
-	char string[129];
-	char* nome;
-	char* curso;
-	int RA;
-	int tamArq;
+	fflush(indices);
+	fflush(turma);
+}
 
-	fseek(turma,0L,SEEK_END);
-	tamArq = ftell(turma);
-	rewind(turma);
-	if(RRN*TAMt >= tamArq)
+int arquivoVazio(FILE* arq)
+{
+	int vazio;
+	long posAnt = ftell(arq);
+	fseek(arq,0L,SEEK_END);
+	if(ftell(arq) > 0)
+		vazio = 0;
+	else vazio = 1;
+
+	fseek(arq,posAnt,SEEK_SET);
+	return vazio;
+}
+
+void novaPaginaArquivo(Pagina* no)
+{
+	long posAnt = ftell(indices);
+
+	fseek(indices,0L,SEEK_END);
+	unsigned int RRN = (ftell(indices) - 4) / TAMi;
+
+	printBytes(no->filhos[0]);
+
+	for(int i = 1; i <= MAX; i++)
 	{
-		printf("A posição requisitada não existe no arquivo de turma!!!\n");
-		return NULL;
+		if(no->itens[i] != NULL)
+		{
+			printBytes(no->itens[i]->RA);
+			printBytes(no->itens[i]->RRN);
+		}
+		else
+		{
+			printBytes(NOT_SET);
+			printBytes(NOT_SET);
+		}
+
+		printBytes(no->filhos[i]);
 	}
 
-	fseek(turma,RRN*TAMt,SEEK_SET);
-	fgets(string,TAMt+1,turma);
+	no->RRN = RRN;
+	fseek(indices,posAnt,SEEK_SET);
+}
 
-        nome = strtok(string,";");
-	curso = strtok(NULL,";");
-	RA = strtol(strtok(NULL,";"),NULL,10);
+void atualizarPagina(Pagina* no)
+{
+	long posAnt = ftell(indices);
 
-	Aluno* novoAluno = malloc(sizeof(Aluno));
-	novoAluno->nome = strcpy(malloc(strlen(nome)+1),nome);
-	novoAluno->curso = strcpy(malloc(strlen(curso)+1),curso);
-	novoAluno->RA_UNESP = RA;
+	unsigned int RRN = no->RRN;
+	long offset = RRN * TAMi + 4; //4 bytes do cabeçalho
+	fseek(indices,offset,SEEK_SET);
+
+	printBytes(no->filhos[0]);
+
+	for(int i = 1; i <= MAX; i++)
+	{
+		if(no->itens[i])
+		{
+			printBytes(no->itens[i]->RA);
+			printBytes(no->itens[i]->RRN);
+		}
+		else
+		{
+			printBytes(NOT_SET);
+			printBytes(NOT_SET);
+		}
+
+		printBytes(no->filhos[i]);
+	}
+
+	fseek(indices,posAnt,SEEK_SET);
+}
+
+//vai pro começo do arquivo e imprime RRN da raiz no cabeçalho
+void setRaiz(unsigned int RRN)
+{
+	long posAnt = ftell(indices);
+	fseek(indices,0L,SEEK_SET);
+	printBytes(RRN);
+	fseek(indices,posAnt,SEEK_SET);
+}
+
+Pagina* carregarPagina(unsigned int RRN)
+{
+	if(RRN == NOT_SET)
+		return NULL;
+
+	long posAnt = ftell(indices);
+
+	long offset = RRN * TAMi + 4;
+	fseek(indices, offset, SEEK_SET);
+
+	Pagina* nova = malloc(sizeof(Pagina));
+	idx* aux = NULL;
+	nova->nChaves = 0;
+
+	nova->filhos[0] = readBytes();
+	for(int i = 1; i <= MAX; i++)
+	{
+		aux = malloc(sizeof(idx));
+		aux->RA = readBytes();
+		aux->RRN = readBytes();
+		nova->itens[i] = aux;
+
+		nova->filhos[i] = readBytes();
+
+		if(nova->itens[i]->RA != NOT_SET)
+			nova->nChaves++;
+	}
+
+	nova->RRN = RRN;
+	fseek(indices,posAnt,SEEK_SET);
+	return nova;
+}
+//-------------------------------------
 
 
-	return novoAluno;
+
+//Operações com bytes:
+//-------------------------------------
+
+//imprime no arquivo de indices um int convertido em 4 caracteres contendo seus 4 bytes
+void printBytes(int n)
+{
+	fputc(n >> 24,indices);
+	fputc(n >> 16,indices);
+	fputc(n >> 8,indices);
+	fputc(n,indices);
+}
+
+unsigned int readBytes()
+{
+	return (fgetc(indices) << 24) + (fgetc(indices) << 16) + (fgetc(indices) << 8) + fgetc(indices);
+}
+
+//-------------------------------------
+
+
+//Funções da Árvore-B
+//-------------------------------------
+Pagina* criarPagina(idx* item, unsigned int filho)
+{
+	Pagina* novaPagina = malloc(sizeof(Pagina));
+	novaPagina->itens[1] = item;
+
+	//inicializando elementos
+	for(int i = 0; i <= MAX; i++)
+		novaPagina->filhos[i] = NOT_SET;	
+	for(int i = 2; i <= MAX; i++)
+		novaPagina->itens[i] = NULL;
+
+	novaPagina->nChaves = 1;
+	novaPagina->filhos[0] = raiz == NULL ? NOT_SET : raiz->RRN;
+	novaPagina->filhos[1] = filho;
+	return novaPagina;
+}
+
+void inserir(idx* item)
+{
+	if(!item)
+	{
+		printf("Item adicionado é inválido\n");
+		return;
+	}
+	if(raiz && raiz->RRN == UINT_MAX - 1)
+	{
+		printf("A árvore está cheia!!!\nNão podem ser adicionados mais itens"); 
+		return;
+	}
+	int novaPagina;
+	idx* elemento; //elemento que será, de fato, inserido
+	unsigned int filho; //RRN do filho direito do elemento a ser inserido
+	novaPagina = inserirItem(item, &elemento, raiz, &filho);
+	if(novaPagina)
+	{
+		raiz = criarPagina(elemento,filho);
+		novaPaginaArquivo(raiz);
+		setRaiz(raiz->RRN);
+	}
 
 }
 
-int pesquisar(int RA, Pagina* no, uint32_t* RRN)
+int inserirItem(idx* item, idx** pelem, Pagina* noAtual, unsigned int* filho)
+{
+	if(noAtual == NULL)
+	{
+		*pelem = item;
+		*filho = NOT_SET;
+
+		return 1;
+	}
+
+	//encontrando posição:
+	//----------------------------------------------------------------------------
+	int pos;
+	if(item->RA < noAtual->itens[1]->RA)
+		pos = 0; //item->RA deve ser inserido na primeira posição
+	else
+		for(pos = noAtual->nChaves; item->RA < noAtual->itens[pos]->RA && pos > 1; pos--); //encontra a posição apropriada pro item->RA no nó
+	//----------------------------------------------------------------------------
+
+	Pagina* proxima = carregarPagina(noAtual->filhos[pos]);
+	if(inserirItem(item,pelem,proxima,filho))
+	{
+		if(noAtual->nChaves < MAX)
+			inserirNaPagina(*pelem, pos, noAtual, *filho);
+		else //overflow
+		{
+			split(*pelem, pelem, pos, noAtual, *filho, filho);
+			free(proxima);
+			return 1;
+		}
+		free(proxima);
+
+	}
+	return 0;
+
+
+}
+
+void inserirNaPagina(idx* item, int pos, Pagina* no, unsigned int filho)
+{
+	int i = no->nChaves;
+	while(i > pos)
+	{
+		no->itens[i+1] = no->itens[i];
+		no->filhos[i+1] = no->filhos[i];
+		i--;
+	}
+	no->itens[i+1] = item;
+	no->filhos[i+1] = filho;
+	no->nChaves++;
+
+	atualizarPagina(no);
+}
+
+//pagDir tem q assumir o valor do RRN da novaPagina
+void split(idx* item, idx** pitem, int pos, Pagina* no, unsigned int filhoRRN, unsigned int* pagDir)
+{
+	int mediana, i;
+	if(pos > MIN)
+		mediana = MIN + 1;
+	else
+		mediana = MIN;
+	Pagina* novaPagina = malloc(sizeof(Pagina));
+	for(int j = 0; j <= MAX; j++)
+		novaPagina->filhos[j] = NOT_SET;	
+	i = mediana + 1;
+
+	while(i <= MAX) //preenchendo o filho "direito"
+	{
+		novaPagina->itens[i-mediana] = no->itens[i];
+		novaPagina->filhos[i-mediana] = no->filhos[i];
+		no->itens[i] = NULL; //"limpando" os itens que foram movidos
+		no->filhos[i] = NOT_SET;
+		i++;
+	}
+
+	//atualiza o número de itens em cada um dos nós resultantes
+	no->nChaves = mediana;
+	novaPagina->nChaves = MAX - mediana;
+
+	//registra a pagina criada no arquivo de indices
+	novaPaginaArquivo(novaPagina);
+
+	if(pos <= MIN)
+		inserirNaPagina(item,pos,no,filhoRRN);
+	else
+		inserirNaPagina(item, pos - mediana, novaPagina, filhoRRN);
+
+	*pitem = no->itens[no->nChaves]; //pitem aponta para o item que será promovido
+	no->itens[no->nChaves] = NULL;
+	novaPagina->filhos[0] = no->filhos[no->nChaves]; //primeiro filho do nó "direito" recebe o nó esquerdo do item que será promovido
+	no->nChaves--;
+
+	atualizarPagina(novaPagina);
+	atualizarPagina(no);
+	*pagDir = novaPagina->RRN;
+	free(novaPagina);
+}
+
+int pesquisar(unsigned int RA, Pagina* no, unsigned int* RRN, int* nSeeks)
 {
 	if(!no)
 		return 0;
@@ -110,10 +361,49 @@ int pesquisar(int RA, Pagina* no, uint32_t* RRN)
 			return 1;
 		}
 	}
-	if(no->filhos[pos])
-		return pesquisar(RA,no->filhos[pos],RRN);
+	if(no->filhos[pos] != NOT_SET)
+	{
+		Pagina* proxima = carregarPagina(no->filhos[pos]);
+		if(nSeeks)
+			*nSeeks = *nSeeks + 1;
+		int res = pesquisar(RA,proxima,RRN,nSeeks);
+		free(proxima);
+		return res;
+	}
 	return 0;
 }
+
+void imprimirArvore(Pagina* no)
+{
+	if(no)
+	{
+		int i;
+		Pagina* proxima;
+		for(i = 0; i < no->nChaves; i++)
+		{
+			proxima = carregarPagina(no->filhos[i]);
+			imprimirArvore(proxima);
+			free(proxima);
+			printf("%u ",no->itens[i+1]->RA);
+		}
+		proxima = carregarPagina(no->filhos[i]);
+		imprimirArvore(proxima);
+		free(proxima);
+	}
+}
+void printArvore()
+{
+	if(!raiz)
+		printf("A árvore está vazia!!\n");
+	else
+		imprimirArvore(raiz);
+}
+//-------------------------------------
+
+
+
+//Funções para registros de aluno
+//-------------------------------------
 
 //valida se a string digitada não possui nenhum caractere inválido
 int validar(char* string)
@@ -163,13 +453,7 @@ idx* criaRegistro()
 	}
 	printf("----------------------------\n\n");
 
-	/* -------------------------
-	   Colocar aqui uma pesquisa 
-	   pelo RA na árvore B pra
-	   garantir que não terá
-	   itens duplicados
-	   ------------------------- */
-	if(pesquisar(a->RA_UNESP,raiz,NULL))
+	if(pesquisar(a->RA_UNESP,raiz,NULL,NULL))
 	{
 		printf("Esse RA já foi registrado anteriormente!!!\n");
 		return NULL;
@@ -196,9 +480,74 @@ idx* criaRegistro()
 	return novo;
 }
 
+Aluno* lerRegistro(int RRN)
+{
+	char string[129];
+	char* nome;
+	char* curso;
+	int RA;
+	int tamArq;
+
+	fseek(turma,0L,SEEK_END);
+	tamArq = ftell(turma);
+	rewind(turma);
+	if(RRN*TAMt >= tamArq)
+	{
+		printf("A posição requisitada não existe no arquivo de turma!!!\n");
+		return NULL;
+	}
+
+	fseek(turma,RRN*TAMt,SEEK_SET);
+	fgets(string,TAMt+1,turma);
+
+        nome = strtok(string,";");
+	curso = strtok(NULL,";");
+	RA = strtol(strtok(NULL,";"),NULL,10);
+
+	Aluno* novoAluno = malloc(sizeof(Aluno));
+	novoAluno->nome = strcpy(malloc(strlen(nome)+1),nome);
+	novoAluno->curso = strcpy(malloc(strlen(curso)+1),curso);
+	novoAluno->RA_UNESP = RA;
+
+
+	return novoAluno;
+
+}
+
+
+void pesquisarAluno(unsigned int RA)
+{
+	unsigned int RRN;
+	int nSeeks = 0;
+	if(pesquisar(RA,raiz,&RRN,&nSeeks))
+	{
+		printf("\n----------------------------\n");
+		printf("Aluno encontrado!\n");
+		printAluno(lerRegistro(RRN));
+		printf("nº de seeks: %d\n",nSeeks);
+		printf("----------------------------\n");
+	}
+	else
+		printf("Aluno NÃO encontrado!!!\n");
+}
+
+void printAluno(Aluno* a)
+{
+	if(a)
+		printf("Nome: %s | RA: %u\nCurso: %s\n",a->nome,a->RA_UNESP,a->curso);
+	else printf("Algo deu bem errado!!\n");
+}
+
+//-------------------------------------
+
+
+
+
+//FUNÇÕES PRA DEBUG
+//---------------------------------
 idx* criaRegistroRedux(char* nome, int RA,  char* curso)
 {
-	if(pesquisar(RA,raiz,NULL))
+	if(pesquisar(RA,raiz,NULL,NULL))
 	{
 		printf("Esse RA já foi registrado anteriormente!!!\n");
 		return NULL;
@@ -227,308 +576,25 @@ idx* criaRegistroRedux(char* nome, int RA,  char* curso)
 	return novo;
 }
 
-
-//cria um novo nó (pagina) já sabido o primeiro item->RA
-//começa na posição 1, deixando a 0 como reserva pra overflow
-//(descobrir pq o filhos[0] aponta pra raiz)
-Pagina* criarPagina(idx* item, Pagina* filho)
+void printPagina(Pagina* pag)
 {
-	Pagina* novaPagina = malloc(sizeof(Pagina));
-	novaPagina->itens[1] = item;
-	novaPagina->nChaves = 1;
-	novaPagina->filhos[0] = raiz; //raiz atual agora é filha esquerda da nova raiz
-	novaPagina->filhos[1] = filho;
-	return novaPagina;
-}
-
-void printPagina(Pagina* pag, uint32_t RRN)
-{
-	char string[53];
-	fseek(indices,RRN*TAMi+1,SEEK_SET);
-	if(pag->filhos[0])
-		printf("%d",pag->filhos[0]);
+	if(!pag)
+	{
+		printf("\n\npagina não existe!!!\n");
+		return;
+	}
+	if(pag->filhos[0] != NOT_SET)
+		printf("%u",pag->filhos[0]);
 	else printf("\?\?\?\?");
 	for(int i = 1; i <= MAX; i++)
 	{
 		if(pag->itens[i])
-			printf("<%d,%d>",pag->itens[i]->RA,pag->itens[i]->RRN);
+			printf("<%u,%u>",pag->itens[i]->RA,pag->itens[i]->RRN);
 		else printf("<\?\?\?\?,\?\?\?\?>");
-		if(pag->filhos[i])
-			printf("%d",pag->filhos[i]);
+		if(pag->filhos[i] != NOT_SET)
+			printf("%u",pag->filhos[i]);
 		else printf("\?\?\?\?");
 	}
 
 
-}
-//uint32_t salvarPagina(Pagina* pag, uint32_t RRN)
-//{
-//	char string[53];
-//	if(RRN == -1) //pagina ainda não está salva no arquivo
-//		fseek(indices,0L,SEEK_END);
-//	else
-//		fseek(indices,RRN*TAMi+1,SEEK_SET);
-//	if(pag->filhos[0])
-//		fprintf(indices,"%c",pag->filhos[0]);
-//	else fprintf(indices,"\?\?\?\?");
-//
-//	for(int i = 1; i <= MAX; i++)
-//	{
-//		if(pag->itens[i])
-//			fprintf(indices,"%c%c",pag->itens[i]->RA,pag->itens[i]->RRN);
-//		else fprintf(indices,"\?\?\?\?\?\?\?\?");
-//		if(pag->filhos[i])
-//			fprintf(indices,"%c",pag->filhos[i]);
-//		else fprintf(indices,"\?\?\?\?");
-//	}
-//
-//}
-
-//arquivo vai ser escrito em binário pra economizar espaço
-//UINT_MAX é colocado onde não se sabe o valor
-uint32_t salvarPagina(Pagina* pag, uint32_t RRN)
-{
-	int pos;
-	char string[53];
-	if(RRN == NOT_SET) //pagina ainda não está salva no arquivo
-		fseek(indices,0L,SEEK_END);
-	else
-		fseek(indices,RRN*TAMi+4,SEEK_SET); //o 4 aqui conta com os bytes do cabeçalho
-	pos = ftell(indices);
-
-	if(pag->filhos[0])
-		printBytes((int)pag->filhos[0]);
-	else printBytes(NOT_SET);
-
-	for(int i = 1; i <= MAX; i++)
-	{
-		if(pag->itens[i])
-		{
-			printBytes(pag->itens[i]->RA);
-			printBytes(pag->itens[i]->RRN);
-		}
-		else
-		{
-			printBytes(NOT_SET);
-			printBytes(NOT_SET);
-		}
-		if(pag->filhos[i])
-			printBytes((int)pag->filhos[i]);
-		else 
-			printBytes(NOT_SET);
-	}
-
-	return (pos - 4)/TAMi;
-}
-
-void printPaginateste()
-{
-	printPagina(raiz,0);
-}
-
-void imprimir(Pagina* no)
-{
-	int i;
-	if(no)
-	{
-		for(i = 0; i < no->nChaves; i++)
-		{
-			imprimir(no->filhos[i]);
-			printf("RA: %d\nRRN: %d\n\n",no->itens[i+1]->RA,no->itens[i+1]->RRN);
-		}
-		imprimir(no->filhos[i]);
-	}
-}
-
-Pagina* carregarPagina(uint32_t RRN)
-{
-	fseek(indices,RRN*TAMi + 4,SEEK_SET);
-	Pagina* nova = malloc(sizeof(Pagina));
-	nova->filhos[0] = readBytes();
-	printf("%d",nova->filhos[0]);
-	for(int i = 1; i <= MAX; i++)
-	{
-		nova->itens[i]->RA = readBytes();
-		nova->itens[i]->RRN = readBytes();
-		printf("<%d,%d>",nova->itens[i]->RA,nova->itens[i]->RRN);
-		nova->filhos[i] = readBytes();
-		printf("%d",nova->filhos[i]);
-	}
-//	imprimir(nova);
-	return nova;
-
-}
-void imprimirPaginaArq(uint32_t RRN)
-{
-	unsigned int num;
-	fseek(indices,RRN*TAMi + 4,SEEK_SET);
-	Pagina* nova = malloc(sizeof(Pagina));
-	printf("\n\n");
-	num = readBytes();
-	if(num == NOT_SET)
-		printf("\?\?\?\?");
-	else
-		printf("%u",num);
-	for(int i = 1; i <= MAX; i++)
-	{
-
-	num = readBytes();
-	if(num == NOT_SET)
-		printf("<\?\?\?\?,");
-	else
-		printf("<%u,",num);
-	num = readBytes();
-	if(num == NOT_SET)
-		printf("\?\?\?\?>");
-	else
-		printf("%u>",num);
-	num = readBytes();
-	if(num == NOT_SET)
-		printf("\?\?\?\?");
-	else
-		printf("%u",num);
-	}
-}
-
-void imprimirPaginaArqTeste()
-{
-//	imprimirPaginaArq(raiz->RRN);
-//	carregarPagina(raiz->RRN);
-//	imprimir(raiz);
-}
-//inserir valor na pagina já sabia a página e a posição q será ocupada
-void inserirNaPagina(idx* item, int pos, Pagina* no, Pagina* filho)
-{
-	int j = no->nChaves;
-	//move todos os elementos até o da pos para a direita a fim de inserir o novo item->RA na nova posição vaga
-	//aparentemente, se pos é 1, o item->RA é inserido em itens[2];
-	while(j > pos)
-	{
-		no->itens[j+1] = no->itens[j];
-		no->filhos[j+1] = no->filhos[j];
-		j--;
-	}
-	no->itens[j+1] = item;
-	no->filhos[j+1] = filho; //filho à esquerda do item->RA inserido
-	no->nChaves++;
-	salvarPagina(no,no->RRN);
-}
-
-//(item->RA que devia ser inserido antes do overflow, endereço dele, pos a ser inserida, no no qual será feita a inserção, filho(esquerdo?) dele, novo nó gerado a partir do split( o qual substituirá o filho esquerdo
-void split(idx* item, idx** pitem, int pos, Pagina* no, Pagina* filho, Pagina** novaPagina)
-{
-	int median, j;
-	//verificação feita a fim de deixar nos nós gerados balanceados
-	if(pos > MIN)
-		median = MIN + 1;
-	else
-		median = MIN;
-
-	*novaPagina = malloc(sizeof(Pagina)); //filho da "direita"
-	j = median + 1;
-	while(j <= MAX) //preenchendo o filho "direito"
-	{
-		(*novaPagina)->itens[j-median] = no->itens[j];
-		(*novaPagina)->filhos[j-median] = no->filhos[j];
-		j++;
-	}
-	//setta o número de itens em cada um dos nós resultantes
-	no->nChaves = median;
-	(*novaPagina)->nChaves = MAX - median;
-
-	//enfim insere o item->RA que causou o overflow no nó apropriado
-	if(pos <= MIN)
-		inserirNaPagina(item,pos,no,filho);
-	else
-		inserirNaPagina(item, pos-median, *novaPagina, filho);
-	*pitem = no->itens[no->nChaves]; //pitem assume o valor do último valor do no atual. presumidamente, esse é o valor que será promovido.
-	(*novaPagina)->filhos[0] = no->filhos[no->nChaves]; //primeiro filhos do novo nó ("direito") recebe o nó esquerdo do item->RA que será promovido
-	no->nChaves--;
-	salvarPagina(no,no->RRN);
-}
-int inserirItem(idx* item, idx** pitem, Pagina* no, Pagina** filho)
-{
-	int pos;
-	if(!no) //criterio de parada para quando chegar na folha da árvore. setta o conteúdo de pitem como o valor que deve ser inserido no nó acima deste na pilha de recursão.
-	{
-		*pitem = item;
-		*filho = NULL; //o nó a ser criado não vai ter filhos (provavelmente vai sr a nova raiz)
-		return 1;
-	}
-
-	//encontrando posição:
-	//----------------------------------------------------------------------------
-	if(item->RA < no->itens[1]->RA)
-		pos = 0; //item->RA deve ser inserido na primeira posição
-	else
-	{
-		for(pos = no->nChaves; item->RA < no->itens[pos]->RA && pos > 1; pos--); //encontra a posição apropriada pro item->RA no nó
-		if(item->RA == no->itens[pos]->RA)
-		{
-			printf("Duplicates not allowed!!\n");
-			return 0;
-		}
-	}
-	//----------------------------------------------------------------------------
-	if(inserirItem(item, pitem, no->filhos[pos], filho)) //tenta ir para o filho esquerdo da posição na qual o novo item->RA teoricamente ocuparia
-		//só vai ser verdadeiro se chegar em um nó folha (ou seja, tentar ir para um filho mas este não existir)
-	{
-		if(no->nChaves < MAX) //nó atual não está em overflow
-			inserirNaPagina(*pitem, pos, no, *filho);
-		else //overflow
-		{
-			split(*pitem, pitem, pos, no, *filho, filho);
-			return 1;
-		}
-	}
-	return 0;
-
-
-}
-void inserir(idx* item)
-{
-	if(raiz && raiz->RRN == UINT_MAX - 1)
-	{
-		printf("A árvore está cheia!!!\nNão podem ser adicionados mais itens"); 
-		return;
-	}
-	int flag; //flag que indica ***
-	idx* i;
-	//i se refere a ***
-	Pagina* filho; //inicialmente não aponta pra nada
-	flag = inserirItem(item, &i, raiz, &filho); //pelo visto, filho vai ser alterado
-	if(flag) //caso será criada uma nova raíz
-	{
-		raiz = criarPagina(i, filho); //i é o valor a ser inserido na raiz
-		raiz->RRN = salvarPagina(raiz,NOT_SET);
-//		printf("RRN da raiz: %d\n",raiz->RRN);
-		fseek(indices,0L,SEEK_SET);
-		printBytes(raiz->RRN);
-
-	}
-
-}
-
-
-
-void imprimirArvore() //wrapper pra função imprimir(raiz);
-{
-	imprimir(raiz);
-	return;
-}
-
-void pesquisarRA(int RA)
-{
-	if(pesquisar(RA,raiz,NULL))
-		printf("RA encontrado!!!\n");
-	else
-		printf("RA NÃO encontrado!!!\n");
-}
-
-Aluno* pesquisarAluno(int RA)
-{
-	int RRN;
-
-	pesquisar(RA,raiz,&RRN);
-	printf("RRN encontrado: %d\n",RRN);
-	return lerRegistro(RRN);
 }
